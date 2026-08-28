@@ -1,0 +1,14 @@
+{
+  "name": "raspi-status",
+  "version": "1.0.0",
+  "description": "Status board for internal services and Azure Service Bus queues",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@azure/service-bus": "^7.9.5"
+  }
+}

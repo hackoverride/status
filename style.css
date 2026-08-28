@@ -1,0 +1,353 @@
+:root {
+  --bg: #14161a;
+  --surface: #1f2228;
+  --surface-2: #191c21;
+  --border: #2c2f36;
+  --text: #e8e9ec;
+  --text-dim: #8a8f98;
+  --text-faint: #565b64;
+
+  --up: #3ecf6e;
+  --down: #e5484d;
+  --down-bg: rgba(229, 72, 77, 0.16);
+  --unknown: #6b7280;
+
+  /* One shared column template, applied to the heading row and every service
+     row. Because all rows use the identical template, a service's cells line
+     up under their column heading and across the whole matrix. */
+  --matrix-cols: minmax(170px, 240px) repeat(3, 1fr);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* --- one-screen board ----------------------------------------------------
+   The board fills the viewport height exactly. Service rows are flex items
+   that share whatever height is left over after the header, column headings,
+   category titles and footer, so all 20 rows fit on a 1920x1080 display
+   without scrolling. Add many more services and rows shrink to their 34px
+   minimum and only then does the page scroll. */
+
+.board {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.summary {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+#summary-text {
+  font-weight: 600;
+  color: var(--up);
+}
+
+#summary-text.summary-alert {
+  color: var(--down);
+}
+
+.matrix {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 24px;
+}
+
+/* --- rows ---------------------------------------------------------------- */
+
+.matrix-row {
+  display: grid;
+  grid-template-columns: var(--matrix-cols);
+  gap: 6px;
+  align-items: stretch;
+  /* Rows share the leftover vertical space equally; 34px is the floor. */
+  flex: 1 1 0;
+  min-height: 34px;
+}
+
+.matrix-head {
+  flex: 0 0 auto;
+  min-height: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3px;
+}
+
+.col-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 10px;
+}
+
+.col-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text);
+}
+
+.col-rollup {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.col-rollup.rollup-alert {
+  color: var(--down);
+}
+
+/* Category heading, spanning the label column only so the columns above it
+   stay uninterrupted. */
+.group-title {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  padding: 6px 0 2px;
+}
+
+.row-label {
+  display: flex;
+  align-items: center;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding-right: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.head-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+}
+
+/* --- status cells -------------------------------------------------------- */
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--unknown);
+  border-radius: 5px;
+  padding: 4px 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cell-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-status {
+  font-weight: 600;
+}
+
+/* Push the response time to the right edge of the cell. */
+.cell-time {
+  margin-left: auto;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--unknown);
+  flex-shrink: 0;
+}
+
+.status-up {
+  border-left-color: var(--up);
+}
+
+.status-up .dot {
+  background: var(--up);
+}
+
+.status-up .cell-status {
+  color: var(--up);
+}
+
+.status-down {
+  background: var(--down-bg);
+  border-color: var(--down);
+  border-left-color: var(--down);
+}
+
+.status-down .dot {
+  background: var(--down);
+}
+
+.status-down .cell-status {
+  color: var(--down);
+}
+
+/* Not running here (yet). Recessed, so an empty cell never reads as a fault. */
+.cell-empty {
+  align-items: center;
+  background: var(--surface-2);
+  border-color: transparent;
+  border-left-color: transparent;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+}
+
+/* --- sparkline strip along the bottom of each cell ----------------------- */
+
+.cell-spark {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 1px;
+  height: 8px;
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+/* Width is set per bar in app.js, from HISTORY_POINTS, so a partly-filled
+   history reads as a partly-filled strip. */
+.spark-bar {
+  flex: 0 0 auto;
+  background: var(--up);
+  border-radius: 1px;
+}
+
+.spark-bar.spark-down {
+  background: var(--down);
+}
+
+.page-footer {
+  flex: 0 0 auto;
+  padding: 8px 24px 12px;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+}
+
+/* --- Azure Service Bus queues (below the fold, redesigned in step 2) ----- */
+
+.categories {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.category-title {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.queue-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.queue-card.queue-error {
+  background: var(--down-bg);
+  border-color: var(--down);
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.card-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.queue-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.queue-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.queue-stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.queue-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.queue-deadletter-alert {
+  color: var(--down);
+}
