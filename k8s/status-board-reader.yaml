@@ -1,0 +1,53 @@
+# Read-only login for the status board. Apply once per cluster.
+#
+# It can list Deployments, StatefulSets and Pods - nothing else. It can't read
+# Secrets or ConfigMaps, and can't create, change or delete anything.
+# See k8s/README.md for how to apply it and copy the token into .env.
+# k8s/status-board-reader.tf does the same thing, if the cluster is managed
+# with Terraform.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: status-board
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: status-board-reader
+  namespace: status-board
+---
+# A long-lived token for the account above. Kubernetes fills in `token` and
+# `ca.crt` by itself a few seconds after this is created.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: status-board-reader-token
+  namespace: status-board
+  annotations:
+    kubernetes.io/service-account.name: status-board-reader
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: status-board-reader
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: status-board-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: status-board-reader
+subjects:
+  - kind: ServiceAccount
+    name: status-board-reader
+    namespace: status-board

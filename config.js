@@ -1,14 +1,21 @@
 // Reads the whole status-board configuration out of .env (or the real
 // environment) and hands it to server.js as plain objects.
 //
-// This module is Node-only. The browser no longer loads it - it gets the same
-// configuration from GET /api/config, which server.js builds from here.
+// This module is Node-only. The browser no longer loads it - it gets the
+// display half of the configuration from GET /api/config, which server.js
+// builds from here.
 //
-// Layout model: the status page is a MATRIX.
-//   - each ROW is one service, identified by `service`
-//   - each COLUMN is one place that service can run (see COLUMN_<n> below)
-// So "Notification Service" on Heroku and the same service on the DEMO
-// Kubernetes cluster share a row, and you read across to compare them.
+// Layout model: the status page is a LIST, Uptime Robot style.
+//   - SECTION_<n> entries are the blocks on the page, in order: e.g. Prod,
+//     Demo, Heroku
+//   - each section lists one line per service: status dot, name, how long
+//     it's been up or down, a bar of the last HISTORY_HOURS, and uptime %
+// Services come from two sources:
+//   - K8S_CLUSTER_<n>: every Deployment and StatefulSet in that cluster shows
+//     up on its own - nothing to list per service.
+//   - ENDPOINT_<n>: plain HTTP checks, for whatever doesn't run in a cluster
+//     (the remaining Heroku apps). These can go in any section, including one
+//     a cluster fills.
 //
 // --- .env format ---------------------------------------------------------
 //
@@ -16,38 +23,57 @@
 // `field=value` pairs separated by semicolons, so field order doesn't matter
 // and optional fields can just be left out:
 //
-//   COLUMN_1=key=current; label=Current; sublabel=Heroku
-//   ENDPOINT_1=name=Auth Service; url=https://.../health; category=Core Services
-//   QUEUE_1=name=Orders; queueName=orders
+//   SECTION_1=key=prod; label=Prod; sublabel=AKS
+//   K8S_CLUSTER_1=section=prod; server=https://...azmk8s.io:443
+//   ENDPOINT_1=name=Auth Service; url=https://.../health; section=heroku
+//   SERVICE_BUS_1=label=my-namespace-dev
 //
 // Numbering only sets the order they're read in; gaps are fine. Values must
-// not contain a semicolon (it separates fields) or a newline.
+// not contain a semicolon (it separates fields) or a newline. Secrets that do
+// contain semicolons - Service Bus connection strings - therefore get a line
+// of their own, e.g. SERVICE_BUS_1_CONNECTION_STRING=..., read verbatim.
+//
+// SECTION_<n> fields: key (REQUIRED), label (REQUIRED), sublabel (optional).
+// `key` is what a cluster's or endpoint's `section` field refers to; `label`
+// is the section heading on the page.
+//
+// K8S_CLUSTER_<n> fields:
+// - section:           REQUIRED. The SECTION_<n> key this cluster's services
+//                      are listed under. One cluster per section.
+// - server:            REQUIRED. API server address, https://...:443.
+// - namespaces:        comma-separated. Only show workloads in these
+//                      namespaces. Default: every namespace except the
+//                      system ones in SYSTEM_NAMESPACES below.
+// - excludeNamespaces: comma-separated. Hide these as well as the system ones.
+//                      Ignored when `namespaces` is set.
+// plus two lines of their own, both REQUIRED:
+// - K8S_CLUSTER_<n>_TOKEN: the read-only ServiceAccount's token
+// - K8S_CLUSTER_<n>_CA:    the cluster's CA certificate, base64 - exactly as
+//                          the token secret's `ca.crt` field holds it
+// k8s/README.md shows how to create the account and print all three lines.
+// A cluster whose _TOKEN or _CA is still empty is skipped, not an error.
+//
+// Exception, for trying the board before the ServiceAccount exists: a server
+// on http://localhost or http://127.0.0.1 is taken to be `kubectl proxy`
+// running on this machine, which adds your own login itself. No _TOKEN or _CA
+// needed then - see "Trying it first" in k8s/README.md.
 //
 // ENDPOINT_<n> fields:
-// - name:           REQUIRED. Unique identity for this ONE endpoint. Used as
-//                   the key for uptime state and response-time history, so
-//                   renaming an existing entry orphans its logged history.
+// - name:           REQUIRED. Unique identity for this ONE endpoint, and the
+//                   name shown on the page. Also the key for its uptime state
+//                   and logged history, so renaming an entry orphans its
+//                   history.
 // - url:            REQUIRED. Address to check.
-// - service:        the row this endpoint belongs to. Defaults to `name`.
-//                   Set it explicitly to put two endpoints on the same row.
-// - column:         which column it appears in - must match a COLUMN_<n> key.
-//                   Defaults to 'current'.
-// - category:       row group heading. Taken from the first endpoint of a
-//                   service, so keep it the same across a service's entries.
-//                   Defaults to 'Other'.
+// - section:        REQUIRED. Which SECTION_<n> key it's listed under.
 // - expectedStatus: HTTP status code that counts as "up". Defaults to 200.
 //
-// Category sections appear in the order the first service of that category
-// appears in the list. Rows are then sorted alphabetically within a category
-// and never move, so a service going down turns its cell red in place.
+// Services are listed alphabetically within a section and never move, so a
+// service going down turns red in place.
 //
-// COLUMN_<n> fields: key (REQUIRED), label (REQUIRED), sublabel (optional).
-// `key` is what an endpoint's `column` field refers to; `label` is the column
-// heading on the page.
-//
-// QUEUE_<n> fields: name (REQUIRED, the label on the card) and queueName
-// (REQUIRED, the actual queue name in the Service Bus namespace). Queue counts
-// also need SERVICE_BUS_CONNECTION_STRING; without it the section is skipped.
+// SERVICE_BUS_<n> fields: label (REQUIRED, shown next to each of that
+// namespace's queues), plus SERVICE_BUS_<n>_CONNECTION_STRING (REQUIRED) on a
+// line of its own. Every queue in the namespace is listed automatically. An
+// empty connection string skips that namespace.
 
 const fs = require("fs");
 const path = require("path");
@@ -89,6 +115,15 @@ function readNumber(key, fallback) {
   return value;
 }
 
+// Entries whose secret lines are still empty - as copied from .env.example,
+// before k8s/README.md has been followed - are skipped with a note instead of
+// stopping the server, so the rest of the board works in the meantime.
+function hasSecrets(envKey, suffixes) {
+  const missing = suffixes.map((suffix) => `${envKey}_${suffix}`).filter((key) => !process.env[key]);
+  if (missing.length) console.log(`.env: ${missing.join(" and ")} not filled in yet - skipping ${envKey}.`);
+  return missing.length === 0;
+}
+
 // Every KEY that looks like PREFIX_<number>, in numeric order. Gaps are fine -
 // the numbers only decide the order, they aren't an index into anything.
 function numberedKeys(prefix) {
@@ -122,37 +157,114 @@ function parseFields(key, raw) {
 }
 
 // Read every PREFIX_<n> into an object, checking the fields that must be there.
+// `envKey` is the line it came from, e.g. "K8S_CLUSTER_1", so entries with
+// secrets on lines of their own can find them.
 function readEntries(prefix, requiredFields) {
-  return numberedKeys(prefix).map((key) => {
-    const entry = parseFields(key, process.env[key]);
+  return numberedKeys(prefix).map((envKey) => {
+    const entry = parseFields(envKey, process.env[envKey]);
 
     for (const field of requiredFields) {
-      if (!entry[field]) throw new Error(`.env: ${key} is missing required field "${field}".`);
+      if (!entry[field]) throw new Error(`.env: ${envKey} is missing required field "${field}".`);
     }
 
-    return entry;
+    return { ...entry, envKey };
   });
+}
+
+function readList(raw) {
+  return (raw || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 // --- the configuration itself ---------------------------------------------
 
-// The columns of the matrix, left to right.
-const COLUMNS = readEntries("COLUMN", ["key", "label"]).map(({ key, label, sublabel }) => ({
+// The queue settings this replaced. Fail loudly rather than silently showing
+// no queues after an upgrade.
+if (process.env.SERVICE_BUS_CONNECTION_STRING || numberedKeys("QUEUE").length) {
+  throw new Error(
+    ".env: SERVICE_BUS_CONNECTION_STRING and QUEUE_<n> are no longer used - queues are now listed " +
+      "automatically. Replace them with SERVICE_BUS_1=label=<name> and SERVICE_BUS_1_CONNECTION_STRING=<...> " +
+      "(see .env.example).",
+  );
+}
+
+// The matrix layout's columns became the list layout's sections.
+if (numberedKeys("COLUMN").length) {
+  throw new Error(
+    ".env: COLUMN_<n> is now SECTION_<n>, and the `column=` field of clusters and endpoints is now " +
+      "`section=` (see .env.example).",
+  );
+}
+
+// The sections of the page, top to bottom.
+const SECTIONS = readEntries("SECTION", ["key", "label"]).map(({ key, label, sublabel }) => ({
   key,
   label,
   ...(sublabel ? { sublabel } : {}),
 }));
 
-const COLUMN_KEYS = new Set(COLUMNS.map((column) => column.key));
+const SECTION_KEYS = new Set(SECTIONS.map((section) => section.key));
 
-const ENDPOINTS = readEntries("ENDPOINT", ["name", "url"]).map((entry) => {
-  const column = entry.column || "current";
-  if (!COLUMN_KEYS.has(column)) {
+function checkSection(what, section) {
+  if (!SECTION_KEYS.has(section)) {
     throw new Error(
-      `.env: endpoint "${entry.name}" is in column "${column}", which is not one of the ` +
-        `configured COLUMN_<n> keys (${[...COLUMN_KEYS].join(", ") || "none"}).`
+      `.env: ${what} is in section "${section}", which is not one of the ` +
+        `configured SECTION_<n> keys (${[...SECTION_KEYS].join(", ") || "none"}).`,
     );
   }
+}
+
+function isLocalProxy(server) {
+  return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(server);
+}
+
+// Namespaces AKS and its add-ons put their own workloads in. Hidden unless a
+// cluster lists namespaces explicitly - they aren't our services.
+const SYSTEM_NAMESPACES = [
+  "kube-system",
+  "kube-public",
+  "kube-node-lease",
+  "gatekeeper-system",
+  "calico-system",
+  "tigera-operator",
+  "app-routing-system",
+  "aks-command",
+  // Istio service mesh (istiod etc.) - the AKS add-on, or installed by hand.
+  "aks-istio-system",
+  "aks-istio-ingress",
+  "aks-istio-egress",
+  "istio-system",
+  "status-board",
+];
+
+const CLUSTERS = readEntries("K8S_CLUSTER", ["section", "server"])
+  .filter((entry) => isLocalProxy(entry.server) || hasSecrets(entry.envKey, ["TOKEN", "CA"]))
+  .map((entry) => {
+    checkSection(`cluster ${entry.envKey}`, entry.section);
+
+    return {
+      envKey: entry.envKey,
+      section: entry.section,
+      server: entry.server,
+      token: process.env[`${entry.envKey}_TOKEN`] || null,
+      ca: process.env[`${entry.envKey}_CA`]
+        ? Buffer.from(process.env[`${entry.envKey}_CA`], "base64").toString("utf8")
+        : null,
+      namespaces: readList(entry.namespaces),
+      excludeNamespaces: [...SYSTEM_NAMESPACES, ...readList(entry.excludeNamespaces)],
+    };
+  });
+
+const clusterSections = CLUSTERS.map((cluster) => cluster.section);
+const sharedSection = clusterSections.find((section, index) => clusterSections.indexOf(section) !== index);
+if (sharedSection) {
+  throw new Error(`.env: more than one K8S_CLUSTER_<n> is in section "${sharedSection}" - one cluster per section.`);
+}
+
+const ENDPOINTS = readEntries("ENDPOINT", ["name", "url", "section"]).map((entry) => {
+  checkSection(`endpoint "${entry.name}"`, entry.section);
 
   const expectedStatus = entry.expectedStatus === undefined ? 200 : Number(entry.expectedStatus);
   if (!Number.isFinite(expectedStatus)) {
@@ -162,33 +274,46 @@ const ENDPOINTS = readEntries("ENDPOINT", ["name", "url"]).map((entry) => {
   return {
     name: entry.name,
     url: entry.url,
-    service: entry.service || entry.name,
-    column,
-    category: entry.category || "Other",
+    section: entry.section,
     expectedStatus,
   };
 });
 
-// Azure Service Bus queues to show message counts for.
-const QUEUES = readEntries("QUEUE", ["name", "queueName"]).map(({ name, queueName }) => ({ name, queueName }));
+// Azure Service Bus namespaces whose queues to list.
+const SERVICE_BUSES = readEntries("SERVICE_BUS", ["label"])
+  .filter(({ envKey }) => hasSecrets(envKey, ["CONNECTION_STRING"]))
+  .map(({ envKey, label }) => ({
+    label,
+    connectionString: process.env[`${envKey}_CONNECTION_STRING`],
+  }));
 
 const PORT = readNumber("PORT", 8080);
 
 // How often to re-check everything, in seconds.
 const REFRESH_INTERVAL_SECONDS = readNumber("REFRESH_INTERVAL_SECONDS", 60);
 
-// How long to wait for a single endpoint before marking it unreachable, in seconds.
+// How long to wait for a single endpoint or cluster before marking it
+// unreachable, in seconds.
 const REQUEST_TIMEOUT_SECONDS = readNumber("REQUEST_TIMEOUT_SECONDS", 5);
 
-// How many past checks to show in each card's history sparkline.
-const HISTORY_POINTS = readNumber("HISTORY_POINTS", 50);
+// How far back each service's history bar reaches, and how many minutes each
+// segment of it covers. 24 hours of 30-minute segments = 48 segments.
+const HISTORY_HOURS = readNumber("HISTORY_HOURS", 24);
+const HISTORY_BAR_MINUTES = readNumber("HISTORY_BAR_MINUTES", 30);
 
 // How long response-times.jsonl is kept before old lines are pruned.
 const RETENTION_DAYS = readNumber("RETENTION_DAYS", 10);
 
-// Stable per-endpoint id, derived from `name`. The page matches check results
-// back to cells by this id rather than by list position, so reordering or
-// re-sorting entries can never make a card show another service's status.
+if ((HISTORY_HOURS * 60) % HISTORY_BAR_MINUTES !== 0) {
+  throw new Error(".env: HISTORY_HOURS must be a whole number of HISTORY_BAR_MINUTES segments.");
+}
+if (RETENTION_DAYS * 24 < HISTORY_HOURS) {
+  throw new Error(".env: RETENTION_DAYS must cover HISTORY_HOURS, or the history bar would run out of data.");
+}
+
+// Stable per-service id, derived from a name. The page matches check results
+// back to rows by this id rather than by list position, so reordering or
+// re-sorting entries can never make a row show another service's status.
 function endpointId(name) {
   return name
     .toLowerCase()
@@ -198,12 +323,14 @@ function endpointId(name) {
 
 module.exports = {
   ENDPOINTS,
-  COLUMNS,
-  QUEUES,
+  CLUSTERS,
+  SECTIONS,
+  SERVICE_BUSES,
   endpointId,
   PORT,
   REFRESH_INTERVAL_SECONDS,
   REQUEST_TIMEOUT_SECONDS,
-  HISTORY_POINTS,
+  HISTORY_HOURS,
+  HISTORY_BAR_MINUTES,
   RETENTION_DAYS,
 };

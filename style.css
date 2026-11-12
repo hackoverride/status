@@ -1,25 +1,32 @@
 :root {
-  --bg: #14161a;
-  --surface: #1f2228;
-  --surface-2: #191c21;
-  --border: #2c2f36;
+  /* 60-30-10: the page background is the 60, the section cards the 30, and
+     status colour the 10 - so the eye goes to colour only when it means
+     something. Healthy bars use a quieter green than the dots, because a page
+     of all-good bars would otherwise be most of the screen. */
+  --bg: #121418;
+  --surface: #1c1f25;
+  --border: #2a2d34;
   --text: #e8e9ec;
-  --text-dim: #8a8f98;
-  --text-faint: #565b64;
+  --text-dim: #9095a0;
+  --text-faint: #5d626b;
 
   --up: #3ecf6e;
+  --up-bar: #2b8f52;
+  --up-bg: rgba(62, 207, 110, 0.12);
   --down: #e5484d;
   --down-bg: rgba(229, 72, 77, 0.16);
-  --unknown: #6b7280;
-
-  /* One shared column template, applied to the heading row and every service
-     row. Because all rows use the identical template, a service's cells line
-     up under their column heading and across the whole matrix. */
-  --matrix-cols: minmax(170px, 240px) repeat(3, 1fr);
+  --warning: #f5a524;
+  --warning-bg: rgba(245, 165, 36, 0.14);
+  --no-data: #2c3038;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Set by app.js on wide screens while the page is zoomed to fit. */
+html.fit-screen {
+  overflow: hidden;
 }
 
 body {
@@ -27,327 +34,346 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
 }
 
-/* --- one-screen board ----------------------------------------------------
-   The board fills the viewport height exactly. Service rows are flex items
-   that share whatever height is left over after the header, column headings,
-   category titles and footer, so all 20 rows fit on a 1920x1080 display
-   without scrolling. Add many more services and rows shrink to their 34px
-   minimum and only then does the page scroll. */
-
-.board {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+.page {
+  max-width: 2000px;
+  margin: 0 auto;
+  padding: 16px 24px 10px;
 }
 
 .page-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  flex: 0 0 auto;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .page-header h1 {
   margin: 0;
-  font-size: 1.4rem;
-}
-
-.summary {
-  display: flex;
-  gap: 16px;
-  align-items: baseline;
-  font-size: 0.9rem;
-  color: var(--text-dim);
-}
-
-#summary-text {
+  font-size: 1.5rem;
   font-weight: 600;
+}
+
+.last-updated,
+.page-footer {
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+
+.page-footer {
+  margin-top: 10px;
+}
+
+/* --- banner: the one line that answers "is anything wrong?" -------------- */
+
+.banner {
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: var(--surface);
+  color: var(--text-dim);
+  margin-bottom: 16px;
+}
+
+.banner-up {
+  background: var(--up-bg);
   color: var(--up);
 }
 
-#summary-text.summary-alert {
+.banner-warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.banner-down {
+  background: var(--down-bg);
   color: var(--down);
 }
 
-.matrix {
-  flex: 1 1 auto;
+/* --- one-screen layout ----------------------------------------------------
+   Wide screens: the cluster sections side by side across two thirds, and a
+   side column with the short sections and the queues. app.js zooms the page
+   out if it's still taller than the screen. Narrow screens: one column. */
+
+.board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (min-width: 1200px) {
+  .board {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+
+  .board.no-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.side,
+.side-stack {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 10px 24px;
+  gap: 16px;
+  min-width: 0;
 }
 
-/* --- rows ---------------------------------------------------------------- */
-
-.matrix-row {
-  display: grid;
-  grid-template-columns: var(--matrix-cols);
-  gap: 6px;
-  align-items: stretch;
-  /* Rows share the leftover vertical space equally; 34px is the floor. */
-  flex: 1 1 0;
-  min-height: 34px;
+.side-stack:empty {
+  display: none;
 }
 
-.matrix-head {
-  flex: 0 0 auto;
-  min-height: 0;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--bg);
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 3px;
+/* The 30: every section and queue namespace sits on a card. */
+.section {
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 12px 16px 8px;
 }
 
-.col-head {
+.section-head {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 0 10px;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
-.col-label {
-  font-size: 0.9rem;
+.section-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text);
 }
 
-.col-rollup {
-  font-size: 0.8rem;
+.sublabel {
+  margin-left: 8px;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.section-summary {
   color: var(--text-dim);
+  font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
 }
 
-.col-rollup.rollup-alert {
+.section-summary.summary-down {
   color: var(--down);
 }
 
-/* Category heading, spanning the label column only so the columns above it
-   stay uninterrupted. */
-.group-title {
-  flex: 0 0 auto;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-  padding: 6px 0 2px;
+.section-summary.summary-warning {
+  color: var(--warning);
 }
 
-.row-label {
+.empty {
+  color: var(--text-faint);
+  margin: 12px 0;
+}
+
+/* --- one line per service: name | history bars | uptime % --------------- */
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(150px, 30%) minmax(0, 1fr) 62px;
+  gap: 16px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.row-name {
+  min-width: 0;
+}
+
+.name-line {
   display: flex;
   align-items: center;
-  font-size: 0.95rem;
-  font-weight: 500;
-  padding-right: 8px;
-  overflow: hidden;
+  gap: 9px;
+}
+
+.name {
+  font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.head-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-dim);
-}
-
-/* --- status cells -------------------------------------------------------- */
-
-.cell {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--unknown);
-  border-radius: 5px;
-  padding: 4px 10px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.cell-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.875rem;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.cell-status {
-  font-weight: 600;
-}
-
-/* Push the response time to the right edge of the cell. */
-.cell-time {
-  margin-left: auto;
-}
-
 .dot {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: var(--unknown);
+  background: var(--text-faint);
   flex-shrink: 0;
 }
 
-.status-up {
-  border-left-color: var(--up);
+.status-line {
+  margin: 2px 0 0 19px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-up .dot {
   background: var(--up);
 }
 
-.status-up .cell-status {
-  color: var(--up);
-}
-
-.status-down {
-  background: var(--down-bg);
-  border-color: var(--down);
-  border-left-color: var(--down);
-}
-
 .status-down .dot {
   background: var(--down);
 }
 
-.status-down .cell-status {
+.status-down .status-line {
   color: var(--down);
 }
 
-/* Not running here (yet). Recessed, so an empty cell never reads as a fault. */
-.cell-empty {
-  align-items: center;
-  background: var(--surface-2);
-  border-color: transparent;
-  border-left-color: transparent;
-  color: var(--text-faint);
-  font-size: 0.9rem;
+/* Scaled to 0 on purpose, or the last known state of a cluster that can't
+   be read right now: present, but neither up nor down. */
+.status-idle .name,
+.status-unknown .name {
+  color: var(--text-dim);
 }
 
-/* --- sparkline strip along the bottom of each cell ----------------------- */
-
-.cell-spark {
+.bars {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 1px;
-  height: 8px;
-  flex-shrink: 0;
-  opacity: 0.65;
+  gap: 2px;
+  height: 26px;
 }
 
-/* Width is set per bar in app.js, from HISTORY_POINTS, so a partly-filled
-   history reads as a partly-filled strip. */
-.spark-bar {
-  flex: 0 0 auto;
-  background: var(--up);
-  border-radius: 1px;
+.bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--no-data);
 }
 
-.spark-bar.spark-down {
+.bar-up {
+  background: var(--up-bar);
+}
+
+.bar-down {
   background: var(--down);
 }
 
-.page-footer {
-  flex: 0 0 auto;
-  padding: 8px 24px 12px;
-  color: var(--text-faint);
-  font-size: 0.8rem;
-}
-
-/* --- Azure Service Bus queues (below the fold, redesigned in step 2) ----- */
-
-.categories {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-  padding: 24px;
-  border-top: 1px solid var(--border);
-}
-
-.category-title {
-  margin: 0 0 12px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.uptime {
+  text-align: right;
   color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
+  font-variant-numeric: tabular-nums;
 }
 
-.status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+.axis {
+  border-bottom: none;
+  padding: 4px 0 0;
 }
 
-.queue-card {
-  background: var(--surface);
-  border: 2px solid var(--border);
-  border-radius: 10px;
-  padding: 16px;
-}
-
-.queue-card.queue-error {
-  background: var(--down-bg);
-  border-color: var(--down);
-}
-
-.card-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.card-name {
-  font-weight: 600;
-  font-size: 1rem;
-}
-
-.queue-stats {
+.axis-labels {
   display: flex;
   justify-content: space-between;
-  margin-top: 12px;
-}
-
-.queue-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.queue-stat-value {
-  font-size: 1.4rem;
-  font-weight: 700;
-}
-
-.queue-stat-label {
   font-size: 0.75rem;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text-faint);
 }
 
-.queue-deadletter-alert {
-  color: var(--down);
+/* --- queues: every queue, one card per namespace ---------------------- */
+
+.queues-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.queues-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.queue-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 110px;
+  gap: 16px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-row:last-child {
+  border-bottom: none;
+}
+
+.queue-labels {
+  padding-top: 10px;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+.queue-labels span:not(:first-child),
+.queue-active,
+.queue-deadletter {
+  text-align: right;
+}
+
+.queue-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-active {
+  color: var(--text-dim);
+}
+
+.queue-deadletter {
+  color: var(--text-faint);
+}
+
+.has-dead-letters .queue-name,
+.has-dead-letters .queue-deadletter {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.queue-error {
+  margin: 10px 0 0;
+  color: var(--warning);
+}
+
+/* --- phone width: tighter columns so 48 bars still fit ------------------- */
+
+@media (max-width: 600px) {
+  .page {
+    padding: 16px;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 40%) minmax(0, 1fr) 44px;
+    gap: 8px;
+  }
+
+  .bars {
+    gap: 1px;
+  }
+
+  .bar {
+    min-width: 1px;
+  }
+
+  .queue-row {
+    grid-template-columns: minmax(0, 1fr) 60px 80px;
+    gap: 8px;
+  }
 }
